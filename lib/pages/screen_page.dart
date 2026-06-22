@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../p2p_connection.dart';
 
-/// 远程屏幕查看页面（主控端）
 class ScreenPage extends StatefulWidget {
   final P2PConnection p2p;
 
@@ -58,12 +57,7 @@ class _ScreenPageState extends State<ScreenPage> {
             )
           : const Center(child: CircularProgressIndicator()),
       floatingActionButton: FloatingActionButton.small(
-        onPressed: () {
-          // 全屏切换
-          if (MediaQuery.of(context).orientation == Orientation.portrait) {
-            // 触发全屏逻辑（依赖设备orientation）
-          }
-        },
+        onPressed: () {},
         child: const Icon(Icons.fullscreen),
       ),
     );
