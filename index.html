@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>远程控制 · P2P</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.container{width:100%;max-width:400px;padding:20px}
+h1{text-align:center;font-size:1.6rem;margin-bottom:24px;color:#58a6ff}
+.room-input{width:100%;padding:14px 16px;font-size:1.1rem;border:1px solid #30363d;border-radius:12px;background:#161b22;color:#c9d1d9;margin-bottom:16px;outline:none}
+.room-input:focus{border-color:#1f6feb}
+.buttons{display:flex;gap:12px;margin-bottom:20px}
+.btn{flex:1;padding:14px;border:none;border-radius:12px;font-size:1rem;cursor:pointer;font-weight:600;transition:opacity .2s}
+.btn:active{opacity:.7}
+.btn-control{background:#238636;color:#fff}
+.btn-controlled{background:#21262d;color:#58a6ff;border:1px solid #30363d}
+.status{text-align:center;padding:12px;border-radius:8px;background:#161b22;font-size:.9rem;margin-bottom:16px}
+.video-wrap{display:none;position:relative;width:100%;aspect-ratio:16/10;background:#000;border-radius:12px;overflow:hidden;margin-bottom:16px}
+.video-wrap.active{display:block}
+video{width:100%;height:100%;object-fit:contain}
+.disconnect{display:none;width:100%;padding:12px;background:#da3633;color:#fff;border:none;border-radius:12px;font-size:1rem;cursor:pointer;text-align:center}
+.disconnect.active{display:block}
+.info{text-align:center;font-size:.8rem;color:#8b949e;margin-top:16px}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>📱 远程控制</h1>
+<input class="room-input" id="roomInput" placeholder="输入房间号" maxlength="32">
+<div class="buttons">
+<button class="btn btn-controlled" id="btnControlled">被对方控</button>
+<button class="btn btn-control" id="btnControl">控制对方</button>
+</div>
+<div class="status" id="status">就绪</div>
+<div class="video-wrap" id="videoWrap"><video id="remoteVideo" autoplay playsinline></video></div>
+<button class="disconnect" id="btnDisconnect" onclick="disconnect()">断开</button>
+<div class="info">信令 xs.free.je | TURN OpenRelay 20GB/月</div>
+</div>
+
+<script>
+// ===== 配置 =====
+const SIGNAL = 'http://xs.free.je/signal.php';
+const ICE = {iceServers:[
+  {urls:'stun:stun.l.google.com:19302'},
+  {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'}
+]};
+
+let pc, room, side, localStream, pollTimer;
+
+const $ = id => document.getElementById(id);
+function setStatus(s) { $('status').textContent = s; }
+
+// ===== 信令 =====
+async function signal(action, data) {
+  const params = new URLSearchParams({action, room});
+  if (data) params.set('data', data);
+  if (side !== undefined) params.set('side', side);
+  const r = await fetch(SIGNAL + '?' + params);
+  return r.json();
+}
+
+// ===== 主控端 =====
+async function startControl() {
+  room = $('roomInput').value.trim();
+  if (!room) return;
+  side = 0;
+  setStatus('连接中...');
+  await signal('create');
+  pc = new RTCPeerConnection(ICE);
+  pc.onicecandidate = e => { if (e.candidate) signal('candidate', JSON.stringify(e.candidate)); };
+  pc.ontrack = e => {
+    $('remoteVideo').srcObject = e.streams[0];
+    $('videoWrap').classList.add('active');
+    $('disconnect').classList.add('active');
+    setStatus('已连接');
+  };
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') setStatus('连接断开');
+  };
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  await signal('offer', JSON.stringify(offer));
+  poll();
+}
+
+// ===== 被控端 =====
+async function startControlled() {
+  room = $('roomInput').value.trim();
+  if (!room) return;
+  side = 1;
+  setStatus('等待主控端...');
+  try {
+    localStream = await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});
+    pc = new RTCPeerConnection(ICE);
+    localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+    pc.onicecandidate = e => { if (e.candidate) signal('candidate', JSON.stringify(e.candidate)); };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') setStatus('连接断开');
+    };
+    poll();
+  } catch (e) {
+    setStatus('屏幕分享权限被拒绝');
+  }
+}
+
+// ===== 轮询信令 =====
+function poll() {
+  pollTimer = setInterval(async () => {
+    try {
+      if (side === 0) {
+        // 主控端拉Answer+候选
+        const ans = await signal('get_answer');
+        if (ans.answer && pc.signalingState !== 'stable') {
+          await pc.setRemoteDescription(JSON.parse(ans.answer));
+          setStatus('已连接');
+        }
+        const cd = await signal('get_candidates');
+        for (const c of cd.candidates || []) {
+          await pc.addIceCandidate(JSON.parse(c));
+        }
+      } else {
+        // 被控端拉Offer+候选
+        const off = await signal('get_offer');
+        if (off.offer && !pc.currentRemoteDescription) {
+          await pc.setRemoteDescription(JSON.parse(off.offer));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          await signal('answer', JSON.stringify(answer));
+          setStatus('已连接');
+        }
+        const cd = await signal('get_candidates');
+        for (const c of cd.candidates || []) {
+          await pc.addIceCandidate(JSON.parse(c));
+        }
+      }
+    } catch (_) {}
+  }, 1500);
+}
+
+// ===== 断开 =====
+async function disconnect() {
+  clearInterval(pollTimer);
+  if (pc) { pc.close(); pc = null; }
+  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+  await signal('close');
+  $('videoWrap').classList.remove('active');
+  $('disconnect').classList.remove('active');
+  $('remoteVideo').srcObject = null;
+  setStatus('已断开');
+}
+
+// ===== 按钮 =====
+$('btnControl').onclick = startControl;
+$('btnControlled').onclick = startControlled;
+window.onbeforeunload = disconnect;
+</script>
+</body>
+</html>
