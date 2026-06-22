@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'p2p_connection.dart';
+import '../p2p_connection.dart';
 import 'screen_page.dart';
 
 class HomePage extends StatefulWidget {
