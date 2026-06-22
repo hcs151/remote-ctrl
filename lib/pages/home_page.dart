@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../p2p_connection.dart';
+import 'p2p_connection.dart';
 import 'screen_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -29,7 +29,6 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  /// 主控端：连接到被控端
   void _startControl() async {
     final room = _roomCtrl.text.trim();
     if (room.isEmpty) return;
@@ -38,7 +37,6 @@ class _HomePageState extends State<HomePage> {
     await _p2p.connect(room);
 
     if (_p2p.remoteStream == null) {
-      // 等一会儿看流过来没
       await Future.delayed(const Duration(seconds: 3));
     }
 
@@ -52,7 +50,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// 被控端：等待被控
   void _startBeControlled() async {
     final room = _roomCtrl.text.trim();
     if (room.isEmpty) return;
