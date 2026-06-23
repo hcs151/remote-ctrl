@@ -32,24 +32,32 @@ class _HomePageState extends State<HomePage> {
   void _startControl() async {
     final room = _roomCtrl.text.trim();
     if (room.isEmpty) return;
+
     setState(() => _status = '正在连接...');
-    final connected = await _p2p.connect(room);
-    if (connected && mounted) {
-      setState(() => _connected = true);
+    await _p2p.connect(room);
+
+    if (_p2p.remoteStream == null) {
+      await Future.delayed(const Duration(seconds: 3));
+    }
+
+    if (_p2p.remoteStream != null && mounted) {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => ScreenPage(p2p: _p2p),
         ),
-      ).then((_) {
-        if (mounted) {
-          setState(() => _connected = false);
-          _p2p.disconnect();
-        }
-      });
-    } else if (mounted) {
-      setState(() => _status = '连接失败');
+      );
     }
+  }
+
+  void _startBeControlled() async {
+    final room = _roomCtrl.text.trim();
+    if (room.isEmpty) return;
+
+    setState(() => _status = '等待被控...');
+    await _p2p.initLocalStream(screen: true);
+    await _p2p.waitConnect(room);
+    setState(() => _connected = true);
   }
 
   @override
@@ -60,32 +68,80 @@ class _HomePageState extends State<HomePage> {
         centerTitle: true,
       ),
       body: Padding(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.phone_android, size: 80, color: Colors.blue),
-            const SizedBox(height: 24),
+            Icon(
+              Icons.phone_android,
+              size: 80,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'P2P 远程控制',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 32),
             TextField(
               controller: _roomCtrl,
               decoration: const InputDecoration(
                 labelText: '房间号',
-                hintText: '输入房间号',
+                hintText: '输入相同的房间号',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.meeting_room),
               ),
             ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: _connected ? null : _startControl,
-              icon: const Icon(Icons.screen_share),
-              label: const Text('开始控制'),
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 48),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _startControl,
+                    icon: const Icon(Icons.touch_app),
+                    label: const Text('控制对方'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _startBeControlled,
+                    icon: const Icon(Icons.screen_share),
+                    label: const Text('被对方控'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceVariant,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    _connected ? Icons.check_circle : Icons.info_outline,
+                    size: 18,
+                    color: _connected ? Colors.green : Colors.grey,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(_status)),
+                ],
               ),
             ),
             const SizedBox(height: 16),
-            Text(_status, style: Theme.of(context).textTheme.bodyLarge),
+            Text(
+              '服务器: xs.free.je | TURN: OpenRelay',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ],
         ),
       ),
