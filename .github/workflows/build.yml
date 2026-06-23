@@ -14,9 +14,20 @@ jobs:
           flutter-version: '3.29.3'
       - run: flutter create --platforms=android .
       - run: |
-          sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "2.0.21"/' android/build.gradle 2>/dev/null || true
-          sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*"/id("org.jetbrains.kotlin.android") version "2.0.21"/' android/settings.gradle 2>/dev/null || true
-          sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*"/id("org.jetbrains.kotlin.android") version "2.0.21"/' android/settings.gradle.kts 2>/dev/null || true
+          python3 -c "
+          import re, os
+          new_ver = '2.1.0'
+          for f in ['android/settings.gradle','android/settings.gradle.kts','android/build.gradle','android/build.gradle.kts']:
+              if not os.path.exists(f): continue
+              c = open(f).read()
+              c2 = re.sub(r'id\s*[\(]?\s*\"org\.jetbrains\.kotlin\.android\"\s*[\)]?\s+version\s+\"[^\"]*\"', f'id \"org.jetbrains.kotlin.android\" version \"{new_ver}\"', c)
+              if c2 != c: open(f,'w').write(c2); print(f'Fixed: {f}')
+          ab = 'android/app/build.gradle'
+          if os.path.exists(ab):
+              c = open(ab).read()
+              c2 = re.sub(r'ext\.kotlin_version\s*=\s*\"[^\"]*\"', f'ext.kotlin_version = \"{new_ver}\"', c)
+              if c2 != c: open(ab,'w').write(c2); print('Fixed: ext.kotlin_version')
+          "
       - run: flutter pub get
       - run: flutter build apk --release
       - uses: actions/upload-artifact@v4
